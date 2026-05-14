@@ -648,7 +648,7 @@ function extractConditionFromSummary(summary) {
     return '';
   }
 
-  const equality = summary.match(/[A-Za-z0-9_[\].()]+\s*(?:[+\-*/%]\s*[A-Za-z0-9_[\].()]+)?\s*(?:==|=|<=|>=|<|>)\s*[A-Za-z0-9_[\].()]+/);
+  const equality = summary.match(/[A-Za-z0-9_[\].()]+\s*(?:[+\-*/%]\s*[A-Za-z0-9_[\].()]+)?\s*(?:==|<=|>=|<|>)\s*[A-Za-z0-9_[\].()]+/);
   return equality?.[0] ?? '';
 }
 
