@@ -1,0 +1,79 @@
+{
+  "two-integer-sum": {
+    "leetcodeSlug": "two-sum",
+    "id": "1",
+    "title": "Two Sum",
+    "difficulty": "Easy",
+    "topics": ["Array", "Hash Table"]
+  },
+  "duplicate-integer": {
+    "leetcodeSlug": "contains-duplicate",
+    "id": "217",
+    "title": "Contains Duplicate",
+    "difficulty": "Easy",
+    "topics": ["Array", "Hash Table", "Sorting"]
+  },
+  "anagram-groups": {
+    "leetcodeSlug": "group-anagrams",
+    "id": "49",
+    "title": "Group Anagrams",
+    "difficulty": "Medium",
+    "topics": ["Array", "Hash Table", "String", "Sorting"]
+  },
+  "validate-parentheses": {
+    "leetcodeSlug": "valid-parentheses",
+    "id": "20",
+    "title": "Valid Parentheses",
+    "difficulty": "Easy",
+    "topics": ["String", "Stack"]
+  },
+  "concatenation-of-array": {
+    "leetcodeSlug": "concatenation-of-array",
+    "id": "1929",
+    "title": "Concatenation of Array",
+    "difficulty": "Easy",
+    "topics": ["Array", "Simulation"]
+  },
+  "count-number-of-islands": {
+    "leetcodeSlug": "number-of-islands",
+    "id": "200",
+    "title": "Number of Islands",
+    "difficulty": "Medium",
+    "topics": ["Array", "Depth-First Search", "Breadth-First Search", "Union Find", "Matrix"]
+  },
+  "daily-temperatures": {
+    "leetcodeSlug": "daily-temperatures",
+    "id": "739",
+    "title": "Daily Temperatures",
+    "difficulty": "Medium",
+    "topics": ["Array", "Stack", "Monotonic Stack"]
+  },
+  "number-of-provinces": {
+    "leetcodeSlug": "number-of-provinces",
+    "id": "547",
+    "title": "Number of Provinces",
+    "difficulty": "Medium",
+    "topics": ["Depth-First Search", "Breadth-First Search", "Union Find", "Graph"]
+  },
+  "shortest-path-in-binary-matrix": {
+    "leetcodeSlug": "shortest-path-in-binary-matrix",
+    "id": "1091",
+    "title": "Shortest Path in Binary Matrix",
+    "difficulty": "Medium",
+    "topics": ["Array", "Breadth-First Search", "Matrix"]
+  },
+  "coin-change": {
+    "leetcodeSlug": "coin-change",
+    "id": "322",
+    "title": "Coin Change",
+    "difficulty": "Medium",
+    "topics": ["Array", "Dynamic Programming", "Breadth-First Search"]
+  },
+  "keys-and-rooms": {
+    "leetcodeSlug": "keys-and-rooms",
+    "id": "841",
+    "title": "Keys and Rooms",
+    "difficulty": "Medium",
+    "topics": ["Depth-First Search", "Breadth-First Search", "Graph"]
+  }
+}

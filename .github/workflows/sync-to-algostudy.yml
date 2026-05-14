@@ -1,0 +1,64 @@
+name: Sync to algostudy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Data Structures & Algorithms/**"
+      - "Only in LeetCode/**"
+      - "scripts/**"
+      - ".github/workflows/sync-to-algostudy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-to-algostudy
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source submissions
+        uses: actions/checkout@v4
+        with:
+          path: source
+          fetch-depth: 0
+
+      - name: Checkout algostudy archive
+        uses: actions/checkout@v4
+        with:
+          repository: samu9nai/algostudy
+          token: ${{ secrets.ALGOSTUDY_SYNC_TOKEN }}
+          path: archive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Normalize submissions
+        run: >
+          node source/scripts/normalize-submissions.mjs
+          --source source
+          --output archive
+          --map source/scripts/problem-map.json
+
+      - name: Commit and push archive changes
+        run: |
+          cd archive
+
+          if [ -z "$(git status --porcelain LeetCode)" ]; then
+            echo "No LeetCode archive changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add LeetCode
+          git commit -m "Sync LeetCode submissions"
+          git push
