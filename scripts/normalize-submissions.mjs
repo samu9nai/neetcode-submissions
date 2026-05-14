@@ -38,19 +38,6 @@ const TOPIC_IDEAS = {
   'Dynamic Programming': '중복되는 부분 문제의 답을 저장해 더 큰 상태의 답을 만든다.',
   Simulation: '문제에서 요구하는 규칙을 순서대로 그대로 적용한다.'
 };
-const FORMULA_BY_SLUG = {
-  'two-sum': '`nums[i] + nums[j] = target`을 만족하는 서로 다른 두 인덱스를 찾습니다.',
-  'contains-duplicate': '이미 본 값의 집합에 현재 값이 존재하면 중복입니다.',
-  'group-anagrams': '각 문자열을 정렬한 값 또는 문자 빈도 벡터를 같은 애너그램 그룹의 key로 사용합니다.',
-  'valid-parentheses': '닫는 괄호가 나올 때 스택의 top이 대응되는 여는 괄호여야 합니다.',
-  'concatenation-of-array': '`ans[i] = nums[i % n]` 형태로 원 배열을 두 번 이어 붙입니다.',
-  'number-of-islands': '섬의 개수는 아직 방문하지 않은 `1` 컴포넌트의 개수입니다.',
-  'daily-temperatures': '`answer[i] = nextWarmerIndex - i`이며, 더 따뜻한 날이 없으면 `0`입니다.',
-  'number-of-provinces': 'province 개수는 연결 그래프의 컴포넌트 수입니다.',
-  'shortest-path-in-binary-matrix': 'BFS 레벨이 시작점에서 현재 칸까지의 최단 거리입니다.',
-  'coin-change': '`dp[x] = min(dp[x], dp[x - coin] + 1)`로 금액별 최소 동전 수를 갱신합니다.',
-  'keys-and-rooms': '0번 방에서 시작해 열쇠로 도달 가능한 방의 수가 전체 방 수와 같아야 합니다.'
-};
 
 const args = parseArgs(process.argv.slice(2));
 const sourceRoot = path.resolve(args.source ?? process.cwd());
@@ -418,7 +405,7 @@ function renderReadme(entry, solutionFileName, timeZone) {
   const coreIdeas = buildCoreIdeas(metadata);
   const implementationFlow = buildImplementationFlow(metadata);
   const cautions = buildCautions(metadata, constraints);
-  const formula = buildFormula(metadata);
+  const formula = buildFormula(metadata, details);
   const summary = buildProblemSummary(metadata, details);
   const oneLine = buildOneLineSummary(metadata, details);
 
@@ -635,21 +622,38 @@ function buildCoreIdeas(metadata) {
   ];
 }
 
-function buildFormula(metadata) {
-  const formula = FORMULA_BY_SLUG[metadata.titleSlug];
-  if (formula) {
-    return formula;
+function buildFormula(metadata, details) {
+  const inferredCondition = extractConditionFromSummary(details.summary);
+  if (inferredCondition) {
+    return `요구 조건 \`${inferredCondition}\`을 만족하는 값을 계산합니다.`;
   }
 
   if (metadata.topics.includes('Dynamic Programming')) {
     return '`dp[state]`를 이전 상태에서 전이해 최적값을 갱신합니다.';
   }
 
-  if (metadata.topics.some((topic) => ['Graph', 'Tree', 'Depth-First Search', 'Breadth-First Search'].includes(topic))) {
+  if (metadata.topics.some((topic) => ['Graph', 'Graph Theory', 'Tree', 'Depth-First Search', 'Breadth-First Search'].includes(topic))) {
     return '정답은 조건을 만족하는 노드/칸/컴포넌트를 탐색하며 누적합니다.';
   }
 
-  return '명시적인 수식보다 조건 검사와 상태 관리가 핵심입니다.';
+  if (metadata.topics.includes('Hash Table')) {
+    return '현재 값과 이미 처리한 값 사이의 관계를 빠르게 조회해 정답 조건을 판별합니다.';
+  }
+
+  if (metadata.topics.includes('Sorting')) {
+    return '정렬 후 인접하거나 같은 기준을 가진 원소들을 비교해 정답을 계산합니다.';
+  }
+
+  return '입력에서 요구 조건을 만족하는 값을 계산해 반환합니다.';
+}
+
+function extractConditionFromSummary(summary) {
+  if (!summary) {
+    return '';
+  }
+
+  const equality = summary.match(/[A-Za-z0-9_[\].()]+\s*(?:[+\-*/%]\s*[A-Za-z0-9_[\].()]+)?\s*(?:==|=|<=|>=|<|>)\s*[A-Za-z0-9_[\].()]+/);
+  return equality?.[0] ?? '';
 }
 
 function buildImplementationFlow(metadata) {
