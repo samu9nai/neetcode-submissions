@@ -21,6 +21,36 @@ const LANGUAGE_BY_EXTENSION = {
 
 const DEFAULT_TIME_ZONE = 'Asia/Seoul';
 const LEETCODE_GRAPHQL_URL = 'https://leetcode.com/graphql';
+const NEETCODE_PROBLEM_URL = 'https://neetcode.io/problems';
+const TOPIC_IDEAS = {
+  Array: '배열을 한 번 이상 순회하면서 필요한 상태를 누적한다.',
+  'Hash Table': '해시 기반 조회로 이미 본 값이나 필요한 보완 값을 빠르게 찾는다.',
+  String: '문자 단위의 순서, 빈도, 짝 관계를 명확히 관리한다.',
+  Sorting: '정렬을 이용해 비교 기준을 단순화하거나 같은 그룹을 모은다.',
+  Stack: '최근에 열린 상태를 스택에 저장하고 닫히는 조건과 매칭한다.',
+  'Monotonic Stack': '단조 스택으로 다음에 조건을 만족하는 위치를 빠르게 찾는다.',
+  'Depth-First Search': 'DFS로 연결된 상태를 깊게 따라가며 방문 여부를 관리한다.',
+  'Breadth-First Search': 'BFS로 같은 거리의 상태를 차례대로 확장한다.',
+  'Union Find': '서로 연결된 원소를 집합으로 묶어 컴포넌트를 관리한다.',
+  Graph: '노드와 간선의 연결 관계를 기준으로 방문 가능한 영역을 탐색한다.',
+  'Graph Theory': '노드와 간선의 연결 관계를 기준으로 방문 가능한 영역을 탐색한다.',
+  Matrix: '행과 열의 경계 조건, 방문 처리, 방향 이동을 함께 관리한다.',
+  'Dynamic Programming': '중복되는 부분 문제의 답을 저장해 더 큰 상태의 답을 만든다.',
+  Simulation: '문제에서 요구하는 규칙을 순서대로 그대로 적용한다.'
+};
+const FORMULA_BY_SLUG = {
+  'two-sum': '`nums[i] + nums[j] = target`을 만족하는 서로 다른 두 인덱스를 찾습니다.',
+  'contains-duplicate': '이미 본 값의 집합에 현재 값이 존재하면 중복입니다.',
+  'group-anagrams': '각 문자열을 정렬한 값 또는 문자 빈도 벡터를 같은 애너그램 그룹의 key로 사용합니다.',
+  'valid-parentheses': '닫는 괄호가 나올 때 스택의 top이 대응되는 여는 괄호여야 합니다.',
+  'concatenation-of-array': '`ans[i] = nums[i % n]` 형태로 원 배열을 두 번 이어 붙입니다.',
+  'number-of-islands': '섬의 개수는 아직 방문하지 않은 `1` 컴포넌트의 개수입니다.',
+  'daily-temperatures': '`answer[i] = nextWarmerIndex - i`이며, 더 따뜻한 날이 없으면 `0`입니다.',
+  'number-of-provinces': 'province 개수는 연결 그래프의 컴포넌트 수입니다.',
+  'shortest-path-in-binary-matrix': 'BFS 레벨이 시작점에서 현재 칸까지의 최단 거리입니다.',
+  'coin-change': '`dp[x] = min(dp[x], dp[x - coin] + 1)`로 금액별 최소 동전 수를 갱신합니다.',
+  'keys-and-rooms': '0번 방에서 시작해 열쇠로 도달 가능한 방의 수가 전체 방 수와 같아야 합니다.'
+};
 
 const args = parseArgs(process.argv.slice(2));
 const sourceRoot = path.resolve(args.source ?? process.cwd());
@@ -185,13 +215,19 @@ async function resolveMetadata(candidate, problemMap, options) {
   const mapped = problemMap[candidate.sourceSlug] ?? {};
   const leetcodeSlug = mapped.leetcodeSlug ?? candidate.sourceSlug;
   let remote = null;
+  let neetcodeDetails = null;
 
   if (!options.offline) {
     remote = await fetchLeetCodeMetadata(leetcodeSlug);
+    if (candidate.sourcePlatform === 'NeetCode') {
+      neetcodeDetails = await fetchNeetCodeDetails(candidate.sourceSlug);
+    }
   }
 
   const titleSlug = remote?.titleSlug ?? mapped.leetcodeSlug ?? leetcodeSlug;
   const id = remote?.questionFrontendId ?? mapped.id ?? candidate.sourceId ?? null;
+  const leetcodeDetails = remote?.content ? parseProblemDetails(remote.content) : null;
+  const problemDetails = mergeProblemDetails(neetcodeDetails, leetcodeDetails, remote);
 
   return {
     platform: 'LeetCode',
@@ -204,7 +240,8 @@ async function resolveMetadata(candidate, problemMap, options) {
     difficulty: remote?.difficulty ?? mapped.difficulty ?? 'Unknown',
     topics: remote?.topicTags?.map((tag) => tag.name) ?? mapped.topics ?? [],
     url: `https://leetcode.com/problems/${titleSlug}/`,
-    language: candidate.language
+    language: candidate.language,
+    problemDetails
   };
 }
 
@@ -216,6 +253,9 @@ async function fetchLeetCodeMetadata(titleSlug) {
         title
         titleSlug
         difficulty
+        content
+        exampleTestcases
+        hints
         topicTags {
           name
           slug
@@ -244,6 +284,62 @@ async function fetchLeetCodeMetadata(titleSlug) {
   } catch {
     return null;
   }
+}
+
+async function fetchNeetCodeDetails(sourceSlug) {
+  try {
+    const response = await fetch(`${NEETCODE_PROBLEM_URL}/${sourceSlug}/question`, {
+      headers: {
+        'User-Agent': 'algostudy-normalizer'
+      }
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const html = await response.text();
+    const articleHtml = extractBetween(
+      html,
+      '<main class="my-article-component-container">',
+      '</main>'
+    );
+    const detailsHtml = articleHtml || html;
+    const details = parseProblemDetails(detailsHtml);
+    const metaSummary = extractMetaDescription(html);
+
+    return {
+      ...details,
+      summary: details.summary || metaSummary
+    };
+  } catch {
+    return null;
+  }
+}
+
+function mergeProblemDetails(primary, fallback, remote) {
+  const normalizedPrimary = primary ?? {};
+  const normalizedFallback = fallback ?? {};
+
+  return {
+    summary: normalizedPrimary.summary || normalizedFallback.summary || '',
+    examples: pickNonEmptyArray(normalizedPrimary.examples, normalizedFallback.examples),
+    constraints: pickNonEmptyArray(normalizedPrimary.constraints, normalizedFallback.constraints),
+    hints: pickNonEmptyArray(normalizedPrimary.hints, remote?.hints ?? normalizedFallback.hints),
+    timeComplexity: normalizedPrimary.timeComplexity || normalizedFallback.timeComplexity || null,
+    spaceComplexity: normalizedPrimary.spaceComplexity || normalizedFallback.spaceComplexity || null,
+    rawExampleTestcases: remote?.exampleTestcases ?? null
+  };
+}
+
+function pickNonEmptyArray(...arrays) {
+  for (const array of arrays) {
+    if (Array.isArray(array) && array.length > 0) {
+      return array;
+    }
+  }
+
+  return [];
 }
 
 function chooseLatestByProblem(entries) {
@@ -312,40 +408,76 @@ function getTargetPaths(rootDir, entry) {
 
 function renderReadme(entry, solutionFileName, timeZone) {
   const { metadata, submittedAt } = entry;
+  const details = metadata.problemDetails ?? {};
   const difficultyLabel = metadata.difficulty === 'Unknown' ? 'LeetCode' : metadata.difficulty;
   const problemId = metadata.id ?? '-';
   const topicText = metadata.topics.length > 0 ? metadata.topics.join(', ') : '수집되지 않음';
   const submittedText = submittedAt ? formatKoreanDate(submittedAt, timeZone) : '수집되지 않음';
+  const sample = details.examples?.[0] ?? null;
+  const constraints = details.constraints?.slice(0, 5) ?? [];
+  const coreIdeas = buildCoreIdeas(metadata);
+  const implementationFlow = buildImplementationFlow(metadata);
+  const cautions = buildCautions(metadata, constraints);
+  const formula = buildFormula(metadata);
+  const summary = buildProblemSummary(metadata, details);
+  const oneLine = buildOneLineSummary(metadata, details);
 
-  return `# [${difficultyLabel}] ${metadata.title} - ${problemId}
+  return `# 🧩 ${metadata.title}
 
-[문제 링크](${metadata.url})
+## 📌 문제 정보
 
-### 성능 요약
+| 항목 | 내용 |
+| --- | --- |
+| 플랫폼 | ${metadata.sourcePlatform} |
+| 문제 번호 | ${problemId} |
+| 난이도 | ${difficultyLabel} |
+| 분류 | ${topicText} |
+| 언어 | ${metadata.language} |
+| 제출 일자 | ${submittedText} |
+| 문제 링크 | [${metadata.title}](${metadata.url}) |
+| 원본 경로 | \`${metadata.sourcePath}\` |
 
-런타임: 수집되지 않음, 메모리: 수집되지 않음
+## 📝 문제 설명
 
-### 분류
+${summary}
 
-${topicText}
+## 📥 입력
 
-### 제출 일자
+${renderInputSection(sample)}
 
-${submittedText}
+## 📤 출력
 
-### 출처
+${renderOutputSection(sample)}
 
-- 플랫폼: ${metadata.sourcePlatform}
-- 원본 경로: \`${metadata.sourcePath}\`
-- 언어: ${metadata.language}
+## 💡 핵심 아이디어
 
-### 문제 요약
+${renderBullets(coreIdeas)}
 
-문제 원문은 저작권 및 약관 리스크를 피하기 위해 저장하지 않습니다. 이 문서는 LeetCode의 공개 메타데이터와 제출 코드 위치를 기준으로 생성합니다.
+## 🧮 정답 계산식
 
-### 풀이 파일
+${formula}
 
-- [${solutionFileName}](./${solutionFileName})
+## 🔍 구현 흐름
+
+${renderNumberedList(implementationFlow)}
+
+## ⚠️ 주의할 점
+
+${renderBullets(cautions)}
+
+## 📁 제출 코드
+
+- 풀이 파일: [${solutionFileName}](./${solutionFileName})
+- 수집 위치: \`${metadata.sourcePath}\`
+
+## ⏱️ 복잡도 분석
+
+- 시간 복잡도: ${details.timeComplexity ?? '직접 분석 필요'}
+- 공간 복잡도: ${details.spaceComplexity ?? '직접 분석 필요'}
+
+## ✅ 한 줄 요약
+
+${oneLine}
 `;
 }
 
@@ -364,9 +496,301 @@ function renderMeta(entry, solutionFileName) {
     url: metadata.url,
     language: metadata.language,
     solutionFile: solutionFileName,
+    summary: metadata.problemDetails?.summary ?? null,
+    constraints: metadata.problemDetails?.constraints ?? [],
+    timeComplexity: metadata.problemDetails?.timeComplexity ?? null,
+    spaceComplexity: metadata.problemDetails?.spaceComplexity ?? null,
     submittedAt,
     generatedAt: new Date().toISOString()
   };
+}
+
+function parseProblemDetails(html) {
+  const exampleBlocks = extractPreBlocks(html).map(parseExampleBlock).filter(Boolean);
+  const constraints = extractConstraints(html);
+  const summary = summarizeProblemHtml(html);
+  const recommendedComplexity = extractRecommendedComplexity(html);
+  const hints = extractHints(html);
+
+  return {
+    summary,
+    examples: exampleBlocks,
+    constraints,
+    hints,
+    timeComplexity: recommendedComplexity.time,
+    spaceComplexity: recommendedComplexity.space
+  };
+}
+
+function summarizeProblemHtml(html) {
+  const beforeExamples = html.split(/<strong[^>]*>\s*(?:Example|Examples|Constraints)\b/i)[0];
+  const paragraphs = [...beforeExamples.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((match) => htmlToText(match[1]))
+    .filter(Boolean)
+    .filter((text) => !/^&nbsp;$/.test(text));
+
+  const summary = paragraphs.join(' ');
+  return truncateText(summary, 320);
+}
+
+function extractPreBlocks(html) {
+  return [...html.matchAll(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi)]
+    .map((match) => htmlToText(match[1]))
+    .map((text) => text.replace(/\n{3,}/g, '\n\n').trim())
+    .filter(Boolean);
+}
+
+function parseExampleBlock(block) {
+  const normalized = block.replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ');
+  const input = extractLabeledText(normalized, 'Input', ['Output', 'Explanation']);
+  const output = extractLabeledText(normalized, 'Output', ['Explanation']);
+  const explanation = extractLabeledText(normalized, 'Explanation', []);
+
+  if (!input && !output && !explanation) {
+    return null;
+  }
+
+  return { input, output, explanation };
+}
+
+function extractLabeledText(text, label, nextLabels) {
+  const escapedLabel = escapeRegExp(label);
+  const nextPattern = nextLabels.length > 0
+    ? `(?=\\n?\\s*(?:${nextLabels.map(escapeRegExp).join('|')})\\s*:|$)`
+    : '$';
+  const match = text.match(new RegExp(`${escapedLabel}\\s*:\\s*([\\s\\S]*?)${nextPattern}`, 'i'));
+
+  return match?.[1]?.trim() ?? '';
+}
+
+function extractConstraints(html) {
+  const constraintsMatch = html.match(/<strong[^>]*>\s*Constraints\s*:\s*<\/strong>[\s\S]*?<ul\b[^>]*>([\s\S]*?)<\/ul>/i)
+    ?? html.match(/Constraints\s*:\s*<\/[^>]+>[\s\S]*?<ul\b[^>]*>([\s\S]*?)<\/ul>/i);
+
+  if (!constraintsMatch) {
+    return [];
+  }
+
+  return [...constraintsMatch[1].matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)]
+    .map((match) => htmlToText(match[1]))
+    .filter(Boolean);
+}
+
+function extractRecommendedComplexity(html) {
+  const section = extractBetween(html, 'Recommended Time', '</details>') ?? '';
+  const text = htmlToText(section);
+  const match = text.match(/O\([^)]+\)\s*time\s+and\s+O\([^)]+\)\s*space/i);
+
+  if (!match) {
+    return { time: null, space: null };
+  }
+
+  const complexities = match[0].match(/O\([^)]+\)/g) ?? [];
+  return {
+    time: complexities[0] ?? null,
+    space: complexities[1] ?? null
+  };
+}
+
+function extractHints(html) {
+  return [...html.matchAll(/<summary>\s*Hint\s+\d+\s*<\/summary>\s*<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((match) => truncateText(htmlToText(match[1]), 220))
+    .filter(Boolean);
+}
+
+function extractMetaDescription(html) {
+  const match = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i);
+  return match ? truncateText(decodeHtml(match[1]), 280) : '';
+}
+
+function buildProblemSummary(metadata, details) {
+  const lines = [];
+  const summary = details.summary || `${metadata.title} 문제의 요구사항을 문제 링크 기준으로 요약합니다.`;
+  lines.push(`- ${summary}`);
+
+  if (details.constraints?.length > 0) {
+    lines.push(`- 주요 제약: ${details.constraints.slice(0, 2).join(' / ')}`);
+  }
+
+  if (metadata.topics.length > 0) {
+    lines.push(`- 핵심 분류: ${metadata.topics.slice(0, 4).join(', ')}`);
+  }
+
+  lines.push('- 문제 원문 전체는 저장하지 않고, 링크와 요약 정보만 보관합니다.');
+  return lines.join('\n');
+}
+
+function buildCoreIdeas(metadata) {
+  const topicIdeas = metadata.topics
+    .map((topic) => TOPIC_IDEAS[topic])
+    .filter(Boolean);
+
+  if (topicIdeas.length > 0) {
+    return unique(topicIdeas).slice(0, 4);
+  }
+
+  return [
+    '입력 크기와 제약을 먼저 확인하고, 완전 탐색이 가능한지 판단한다.',
+    '반복되는 상태나 빠른 조회가 필요한 값은 적절한 자료구조로 관리한다.'
+  ];
+}
+
+function buildFormula(metadata) {
+  const formula = FORMULA_BY_SLUG[metadata.titleSlug];
+  if (formula) {
+    return formula;
+  }
+
+  if (metadata.topics.includes('Dynamic Programming')) {
+    return '`dp[state]`를 이전 상태에서 전이해 최적값을 갱신합니다.';
+  }
+
+  if (metadata.topics.some((topic) => ['Graph', 'Tree', 'Depth-First Search', 'Breadth-First Search'].includes(topic))) {
+    return '정답은 조건을 만족하는 노드/칸/컴포넌트를 탐색하며 누적합니다.';
+  }
+
+  return '명시적인 수식보다 조건 검사와 상태 관리가 핵심입니다.';
+}
+
+function buildImplementationFlow(metadata) {
+  const flow = ['입력으로 주어진 값과 예외 케이스를 먼저 정리한다.'];
+
+  if (metadata.topics.includes('Hash Table')) {
+    flow.push('빠른 조회가 필요한 값을 해시맵 또는 해시셋에 저장한다.');
+  } else if (metadata.topics.includes('Stack') || metadata.topics.includes('Monotonic Stack')) {
+    flow.push('스택에 아직 처리되지 않은 후보를 유지하며 현재 값과 비교한다.');
+  } else if (metadata.topics.includes('Breadth-First Search')) {
+    flow.push('큐를 사용해 가까운 상태부터 방문하고, 방문 여부를 함께 관리한다.');
+  } else if (metadata.topics.includes('Depth-First Search')) {
+    flow.push('재귀 또는 스택으로 연결된 상태를 끝까지 탐색한다.');
+  } else if (metadata.topics.includes('Dynamic Programming')) {
+    flow.push('작은 상태의 답을 저장하고 더 큰 상태로 전이한다.');
+  } else {
+    flow.push('문제 조건에 맞는 자료구조를 선택해 순회한다.');
+  }
+
+  flow.push('정답 조건을 만족하면 결과를 갱신하거나 즉시 반환한다.');
+  flow.push('모든 입력을 처리한 뒤 최종 결과를 반환한다.');
+  return flow;
+}
+
+function buildCautions(metadata, constraints) {
+  const cautions = [];
+
+  if (constraints.length > 0) {
+    cautions.push(`제약 조건: ${constraints.slice(0, 3).join(' / ')}`);
+  }
+
+  if (metadata.topics.includes('Hash Table')) {
+    cautions.push('같은 값을 여러 번 사용할 수 있는지, 인덱스 중복이 허용되는지 확인한다.');
+  }
+
+  if (metadata.topics.includes('Stack')) {
+    cautions.push('스택이 비어 있는 상태에서 top을 참조하지 않도록 처리한다.');
+  }
+
+  if (metadata.topics.some((topic) => ['Depth-First Search', 'Breadth-First Search', 'Graph', 'Matrix'].includes(topic))) {
+    cautions.push('방문 처리 시점이 늦으면 중복 방문이나 무한 탐색이 생길 수 있다.');
+  }
+
+  if (metadata.topics.includes('Dynamic Programming')) {
+    cautions.push('초기값과 불가능한 상태를 구분해 오답 전이를 막는다.');
+  }
+
+  if (cautions.length === 0) {
+    cautions.push('입력의 경계값과 빈 값 처리 여부를 확인한다.');
+  }
+
+  return unique(cautions).slice(0, 5);
+}
+
+function buildOneLineSummary(metadata, details) {
+  const topicText = metadata.topics.length > 0 ? metadata.topics.slice(0, 2).join(', ') : '조건 처리';
+  const complexity = details.timeComplexity ? ` 목표 시간 복잡도는 ${details.timeComplexity}입니다.` : '';
+  return `${metadata.title}은 ${topicText} 관점에서 핵심 조건을 빠르게 판별하는 문제입니다.${complexity}`;
+}
+
+function renderInputSection(sample) {
+  if (!sample?.input) {
+    return '함수 인자 또는 입력 형식은 문제 링크를 기준으로 확인합니다.';
+  }
+
+  return `\`\`\`text\n${sample.input}\n\`\`\``;
+}
+
+function renderOutputSection(sample) {
+  if (!sample?.output) {
+    return '반환값 또는 출력 형식은 문제 링크를 기준으로 확인합니다.';
+  }
+
+  const explanation = sample.explanation ? `\n\n설명: ${sample.explanation}` : '';
+  return `\`\`\`text\n${sample.output}\n\`\`\`${explanation}`;
+}
+
+function renderBullets(items) {
+  return items.map((item) => `- ${item}`).join('\n');
+}
+
+function renderNumberedList(items) {
+  return items.map((item, index) => `${index + 1}. ${item}`).join('\n');
+}
+
+function htmlToText(html) {
+  return decodeHtml(
+    html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/?[^>]+>/g, '')
+  )
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function decodeHtml(text) {
+  return text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&mdash;/g, '-')
+    .replace(/&ndash;/g, '-');
+}
+
+function extractBetween(text, startToken, endToken) {
+  const startIndex = text.indexOf(startToken);
+  if (startIndex < 0) {
+    return null;
+  }
+
+  const contentStart = startIndex + startToken.length;
+  const endIndex = text.indexOf(endToken, contentStart);
+  if (endIndex < 0) {
+    return null;
+  }
+
+  return text.slice(contentStart, endIndex);
+}
+
+function truncateText(text, maxLength) {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1).trim()}…`;
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function unique(items) {
+  return [...new Set(items)];
 }
 
 function formatKoreanDate(isoDate, timeZone) {
