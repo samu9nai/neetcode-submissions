@@ -43,11 +43,13 @@ const args = parseArgs(process.argv.slice(2));
 const sourceRoot = path.resolve(args.source ?? process.cwd());
 const outputRoot = path.resolve(args.output ?? path.join(process.cwd(), 'normalized'));
 const mapPath = path.resolve(args.map ?? path.join(sourceRoot, 'scripts', 'problem-map.json'));
+const templatePath = path.resolve(args.template ?? path.join(sourceRoot, 'scripts', 'templates', 'leetcode-readme.md'));
 const timeZone = args.timezone ?? DEFAULT_TIME_ZONE;
 const offline = Boolean(args.offline);
 const dryRun = Boolean(args['dry-run']);
 
 const problemMap = await loadProblemMap(mapPath);
+const readmeTemplate = await loadReadmeTemplate(templatePath);
 const sourceFiles = await collectFiles(sourceRoot);
 const candidates = sourceFiles
   .map((file) => toSubmissionCandidate(sourceRoot, file))
@@ -74,7 +76,7 @@ if (!dryRun) {
 for (const entry of latestByProblem) {
   const target = getTargetPaths(outputRoot, entry);
   const code = await fs.readFile(entry.candidate.absolutePath, 'utf8');
-  const readme = renderReadme(entry, target.solutionFileName, timeZone);
+  const readme = renderReadme(entry, target.solutionFileName, timeZone, readmeTemplate);
 
   if (dryRun) {
     console.log(`[dry-run] ${entry.candidate.relativePath} -> ${path.relative(outputRoot, target.problemDir)}`);
@@ -117,6 +119,18 @@ async function loadProblemMap(filePath) {
   } catch (error) {
     if (error.code === 'ENOENT') {
       return {};
+    }
+
+    throw error;
+  }
+}
+
+async function loadReadmeTemplate(filePath) {
+  try {
+    return await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new Error(`README template not found: ${filePath}`);
     }
 
     throw error;
@@ -412,7 +426,7 @@ function getTargetPaths(rootDir, entry) {
   };
 }
 
-function renderReadme(entry, solutionFileName, timeZone) {
+function renderReadme(entry, solutionFileName, timeZone, template) {
   const { metadata, submittedAt } = entry;
   const details = metadata.problemDetails ?? {};
   const difficultyLabel = metadata.difficulty === 'Unknown' ? 'LeetCode' : metadata.difficulty;
@@ -427,64 +441,47 @@ function renderReadme(entry, solutionFileName, timeZone) {
   const formula = buildFormula(metadata, details);
   const summary = buildProblemSummary(metadata, details);
   const oneLine = buildOneLineSummary(metadata, details);
+  const problemInfoTable = [
+    '| 항목 | 내용 |',
+    '| --- | --- |',
+    `| 플랫폼 | ${metadata.sourcePlatform} |`,
+    `| 문제 번호 | ${problemId} |`,
+    `| 난이도 | ${difficultyLabel} |`,
+    `| 분류 | ${topicText} |`,
+    `| 언어 | ${metadata.language} |`,
+    `| 제출 일자 | ${submittedText} |`,
+    `| 문제 링크 | [${metadata.title}](${metadata.url}) |`,
+    `| 원본 경로 | \`${metadata.sourcePath}\` |`
+  ].join('\n');
 
-  return `# 🧩 ${metadata.title}
+  return renderTemplate(template, {
+    TITLE: metadata.title,
+    PROBLEM_INFO_TABLE: problemInfoTable,
+    PROBLEM_SUMMARY: summary,
+    INPUT_SECTION: renderInputSection(sample),
+    OUTPUT_SECTION: renderOutputSection(sample),
+    CORE_IDEAS: renderBullets(coreIdeas),
+    FORMULA: formula,
+    IMPLEMENTATION_FLOW: renderNumberedList(implementationFlow),
+    CAUTIONS: renderBullets(cautions),
+    SOLUTION_FILE_NAME: solutionFileName,
+    SOURCE_PATH: metadata.sourcePath,
+    TIME_COMPLEXITY: details.timeComplexity ?? '직접 분석 필요',
+    SPACE_COMPLEXITY: details.spaceComplexity ?? '직접 분석 필요',
+    ONE_LINE_SUMMARY: oneLine
+  });
+}
 
-## 📌 문제 정보
+function renderTemplate(template, values) {
+  const rendered = template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (match, key) => {
+    if (!Object.hasOwn(values, key)) {
+      throw new Error(`Missing README template value: ${key}`);
+    }
 
-| 항목 | 내용 |
-| --- | --- |
-| 플랫폼 | ${metadata.sourcePlatform} |
-| 문제 번호 | ${problemId} |
-| 난이도 | ${difficultyLabel} |
-| 분류 | ${topicText} |
-| 언어 | ${metadata.language} |
-| 제출 일자 | ${submittedText} |
-| 문제 링크 | [${metadata.title}](${metadata.url}) |
-| 원본 경로 | \`${metadata.sourcePath}\` |
+    return values[key];
+  });
 
-## 📝 문제 설명
-
-${summary}
-
-## 📥 입력
-
-${renderInputSection(sample)}
-
-## 📤 출력
-
-${renderOutputSection(sample)}
-
-## 💡 핵심 아이디어
-
-${renderBullets(coreIdeas)}
-
-## 🧮 정답 계산식
-
-${formula}
-
-## 🔍 구현 흐름
-
-${renderNumberedList(implementationFlow)}
-
-## ⚠️ 주의할 점
-
-${renderBullets(cautions)}
-
-## 📁 제출 코드
-
-- 풀이 파일: [${solutionFileName}](./${solutionFileName})
-- 수집 위치: \`${metadata.sourcePath}\`
-
-## ⏱️ 복잡도 분석
-
-- 시간 복잡도: ${details.timeComplexity ?? '직접 분석 필요'}
-- 공간 복잡도: ${details.spaceComplexity ?? '직접 분석 필요'}
-
-## ✅ 한 줄 요약
-
-${oneLine}
-`;
+  return `${rendered.trimEnd()}\n`;
 }
 
 function parseProblemDetails(html) {

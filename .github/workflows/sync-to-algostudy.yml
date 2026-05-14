@@ -50,6 +50,7 @@ jobs:
           --source source
           --output archive
           --map source/scripts/problem-map.json
+          --template source/scripts/templates/leetcode-readme.md
 
       - name: Commit and push archive changes
         run: |
