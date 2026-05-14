@@ -35,6 +35,9 @@ jobs:
           repository: samu9nai/algostudy
           token: ${{ secrets.ALGOSTUDY_SYNC_TOKEN }}
           path: archive
+          sparse-checkout: |
+            LeetCode
+          sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
