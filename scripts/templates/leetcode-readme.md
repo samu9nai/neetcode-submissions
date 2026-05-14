@@ -6,7 +6,7 @@
 
 ## 📝 문제 설명
 
-{{PROBLEM_SUMMARY}}
+{{PROBLEM_STATEMENT}}
 
 ## 📥 입력
 

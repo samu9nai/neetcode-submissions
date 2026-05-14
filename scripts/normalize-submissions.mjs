@@ -342,6 +342,7 @@ function mergeProblemDetails(primary, fallback, remote) {
   const normalizedFallback = fallback ?? {};
 
   return {
+    statement: normalizedPrimary.statement || normalizedFallback.statement || '',
     summary: normalizedPrimary.summary || normalizedFallback.summary || '',
     examples: pickNonEmptyArray(normalizedPrimary.examples, normalizedFallback.examples),
     constraints: pickNonEmptyArray(normalizedPrimary.constraints, normalizedFallback.constraints),
@@ -440,6 +441,7 @@ function renderReadme(entry, solutionFileName, timeZone, template) {
   const cautions = buildCautions(metadata, constraints);
   const formula = buildFormula(metadata, details);
   const summary = buildProblemSummary(metadata, details);
+  const problemStatement = details.statement || summary;
   const oneLine = buildOneLineSummary(metadata, details);
   const problemInfoTable = [
     '| 항목 | 내용 |',
@@ -457,6 +459,7 @@ function renderReadme(entry, solutionFileName, timeZone, template) {
   return renderTemplate(template, {
     TITLE: metadata.title,
     PROBLEM_INFO_TABLE: problemInfoTable,
+    PROBLEM_STATEMENT: problemStatement,
     PROBLEM_SUMMARY: summary,
     INPUT_SECTION: renderInputSection(sample),
     OUTPUT_SECTION: renderOutputSection(sample),
@@ -485,6 +488,7 @@ function renderTemplate(template, values) {
 }
 
 function parseProblemDetails(html) {
+  const statement = htmlToMarkdown(stripAuxiliarySections(html));
   const exampleBlocks = extractPreBlocks(html).map(parseExampleBlock).filter(Boolean);
   const constraints = extractConstraints(html);
   const summary = summarizeProblemHtml(html);
@@ -492,6 +496,7 @@ function parseProblemDetails(html) {
   const hints = extractHints(html);
 
   return {
+    statement,
     summary,
     examples: exampleBlocks,
     constraints,
@@ -595,7 +600,6 @@ function buildProblemSummary(metadata, details) {
     lines.push(`- 핵심 분류: ${metadata.topics.slice(0, 4).join(', ')}`);
   }
 
-  lines.push('- 문제 원문 전체는 저장하지 않고, 링크와 요약 정보만 보관합니다.');
   return lines.join('\n');
 }
 
@@ -743,6 +747,59 @@ function htmlToText(html) {
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
+}
+
+function htmlToMarkdown(html) {
+  const withCodeBlocks = html
+    .replace(/<!---->/g, '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, inner) => {
+      const code = htmlToText(inner);
+      return `\n\n\`\`\`text\n${code}\n\`\`\`\n\n`;
+    });
+
+  const markdown = withCodeBlocks
+    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_, level, inner) => {
+      const headingLevel = Math.min(Number(level) + 2, 6);
+      return `\n\n${'#'.repeat(headingLevel)} ${htmlInlineToMarkdown(inner)}\n\n`;
+    })
+    .replace(/<p\b[^>]*>([\s\S]*?)<\/p>/gi, (_, inner) => `\n\n${htmlInlineToMarkdown(inner)}\n\n`)
+    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_, inner) => `\n- ${htmlInlineToMarkdown(inner)}`)
+    .replace(/<\/?(?:ul|ol)\b[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:div|main|section|article|span)\b[^>]*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return decodeHtml(markdown);
+}
+
+function htmlInlineToMarkdown(html) {
+  return decodeHtml(
+    html
+      .replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_, inner) => `\`${htmlToText(inner).replace(/\n+/g, ' ')}\``)
+      .replace(/<(?:strong|b)\b[^>]*>([\s\S]*?)<\/(?:strong|b)>/gi, (_, inner) => `**${htmlInlineToMarkdown(inner)}**`)
+      .replace(/<(?:em|i)\b[^>]*>([\s\S]*?)<\/(?:em|i)>/gi, (_, inner) => `*${htmlInlineToMarkdown(inner)}*`)
+      .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, inner) => {
+        const text = htmlInlineToMarkdown(inner);
+        return text ? `[${text}](${decodeHtml(href)})` : decodeHtml(href);
+      })
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+  )
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function stripAuxiliarySections(html) {
+  return html
+    .replace(/<details\b[^>]*>[\s\S]*?<\/details>/gi, '')
+    .replace(/<div\b[^>]*class=["'][^"']*company-tags-container[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, '');
 }
 
 function decodeHtml(text) {
