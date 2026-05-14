@@ -67,11 +67,14 @@ for (const candidate of candidates) {
 
 const latestByProblem = chooseLatestByProblem(resolvedEntries);
 
+if (!dryRun) {
+  await removeGeneratedMetaFiles(outputRoot);
+}
+
 for (const entry of latestByProblem) {
   const target = getTargetPaths(outputRoot, entry);
   const code = await fs.readFile(entry.candidate.absolutePath, 'utf8');
   const readme = renderReadme(entry, target.solutionFileName, timeZone);
-  const meta = renderMeta(entry, target.solutionFileName);
 
   if (dryRun) {
     console.log(`[dry-run] ${entry.candidate.relativePath} -> ${path.relative(outputRoot, target.problemDir)}`);
@@ -81,7 +84,6 @@ for (const entry of latestByProblem) {
   await fs.mkdir(target.problemDir, { recursive: true });
   await fs.writeFile(target.solutionPath, code);
   await fs.writeFile(path.join(target.problemDir, 'README.md'), readme);
-  await fs.writeFile(path.join(target.problemDir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
 }
 
 console.log(`Normalized ${latestByProblem.length} problem(s) into ${outputRoot}`);
@@ -142,6 +144,23 @@ async function collectFiles(rootDir) {
 
   await walk(rootDir);
   return result;
+}
+
+async function removeGeneratedMetaFiles(rootDir) {
+  const leetcodeRoot = path.join(rootDir, 'LeetCode');
+
+  try {
+    const files = await collectFiles(leetcodeRoot);
+    await Promise.all(
+      files
+        .filter((file) => path.basename(file) === 'meta.json')
+        .map((file) => fs.unlink(file))
+    );
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
 }
 
 function toSubmissionCandidate(rootDir, absolutePath) {
@@ -466,30 +485,6 @@ ${renderBullets(cautions)}
 
 ${oneLine}
 `;
-}
-
-function renderMeta(entry, solutionFileName) {
-  const { metadata, submittedAt } = entry;
-  return {
-    platform: metadata.platform,
-    sourcePlatform: metadata.sourcePlatform,
-    sourceCategory: metadata.sourceCategory,
-    sourcePath: metadata.sourcePath,
-    id: metadata.id,
-    title: metadata.title,
-    slug: metadata.titleSlug,
-    difficulty: metadata.difficulty,
-    topics: metadata.topics,
-    url: metadata.url,
-    language: metadata.language,
-    solutionFile: solutionFileName,
-    summary: metadata.problemDetails?.summary ?? null,
-    constraints: metadata.problemDetails?.constraints ?? [],
-    timeComplexity: metadata.problemDetails?.timeComplexity ?? null,
-    spaceComplexity: metadata.problemDetails?.spaceComplexity ?? null,
-    submittedAt,
-    generatedAt: new Date().toISOString()
-  };
 }
 
 function parseProblemDetails(html) {
