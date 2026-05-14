@@ -40,6 +40,18 @@ Python For Beginners/python-hello-world/submission-0.py
 
 ---
 
+## Algostudy archive sync
+
+This repository also feeds [`samu9nai/algostudy`](https://github.com/samu9nai/algostudy) through `.github/workflows/sync-to-algostudy.yml`.
+
+- NeetCode submissions under `Data Structures & Algorithms/` are normalized into `algostudy/LeetCode/`.
+- LeetCode-only submissions can be added manually under `Only in LeetCode/<number>-<slug>/`.
+- If the `GEMINI_API_KEY` repository secret is present, the README analysis sections are generated with Gemini using `GEMINI_MODEL` (`gemini-2.5-flash` by default).
+- Generated analysis is cached with an invisible README marker and reused until the problem statement or solution code changes.
+- If Gemini is unavailable, the script falls back to deterministic local analysis so the sync still succeeds.
+
+---
+
 ## Supported languages
 
 | Language | Extension |

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -20,8 +21,62 @@ const LANGUAGE_BY_EXTENSION = {
 };
 
 const DEFAULT_TIME_ZONE = 'Asia/Seoul';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
 const LEETCODE_GRAPHQL_URL = 'https://leetcode.com/graphql';
 const NEETCODE_PROBLEM_URL = 'https://neetcode.io/problems';
+const GEMINI_GENERATE_CONTENT_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+const AI_ANALYSIS_VERSION = 'v1';
+const AI_ANALYSIS_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    coreIdeas: {
+      type: 'ARRAY',
+      minItems: 2,
+      maxItems: 5,
+      items: { type: 'STRING' },
+      description: '문제 해결의 핵심 아이디어를 한국어 문장 배열로 작성합니다.'
+    },
+    formula: {
+      type: 'STRING',
+      description: '정답을 계산하는 핵심 관계식 또는 판정 기준을 한국어 한두 문장으로 작성합니다.'
+    },
+    implementationFlow: {
+      type: 'ARRAY',
+      minItems: 3,
+      maxItems: 6,
+      items: { type: 'STRING' },
+      description: '제출 코드 기준 구현 흐름을 한국어 단계 배열로 작성합니다.'
+    },
+    cautions: {
+      type: 'ARRAY',
+      minItems: 1,
+      maxItems: 5,
+      items: { type: 'STRING' },
+      description: '오답을 만들기 쉬운 경계 조건이나 구현상 주의점을 한국어 문장 배열로 작성합니다.'
+    },
+    timeComplexity: {
+      type: 'STRING',
+      description: '제출 코드의 시간 복잡도를 Big-O 표기 또는 직접 분석 필요로 작성합니다.'
+    },
+    spaceComplexity: {
+      type: 'STRING',
+      description: '제출 코드의 공간 복잡도를 Big-O 표기 또는 직접 분석 필요로 작성합니다.'
+    },
+    oneLineSummary: {
+      type: 'STRING',
+      description: '문제와 풀이 전략을 한국어 한 문장으로 요약합니다.'
+    }
+  },
+  required: [
+    'coreIdeas',
+    'formula',
+    'implementationFlow',
+    'cautions',
+    'timeComplexity',
+    'spaceComplexity',
+    'oneLineSummary'
+  ]
+};
 const TOPIC_IDEAS = {
   Array: '배열을 한 번 이상 순회하면서 필요한 상태를 누적한다.',
   'Hash Table': '해시 기반 조회로 이미 본 값이나 필요한 보완 값을 빠르게 찾는다.',
@@ -47,6 +102,18 @@ const templatePath = path.resolve(args.template ?? path.join(sourceRoot, 'script
 const timeZone = args.timezone ?? DEFAULT_TIME_ZONE;
 const offline = Boolean(args.offline);
 const dryRun = Boolean(args['dry-run']);
+const aiOptions = {
+  apiKey: process.env.GEMINI_API_KEY?.trim() ?? '',
+  enabled: !offline && !dryRun,
+  model: args['gemini-model'] ?? process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL,
+  refresh: Boolean(args['refresh-ai'])
+};
+const aiStats = {
+  cached: 0,
+  generated: 0,
+  fallback: 0,
+  disabled: 0
+};
 
 const problemMap = await loadProblemMap(mapPath);
 const readmeTemplate = await loadReadmeTemplate(templatePath);
@@ -76,7 +143,9 @@ if (!dryRun) {
 for (const entry of latestByProblem) {
   const target = getTargetPaths(outputRoot, entry);
   const code = await fs.readFile(entry.candidate.absolutePath, 'utf8');
-  const readme = renderReadme(entry, target.solutionFileName, timeZone, readmeTemplate);
+  const existingReadme = await readOptionalTextFile(path.join(target.problemDir, 'README.md'));
+  const analysis = await resolveReadmeAnalysis(entry, code, existingReadme, aiOptions, aiStats);
+  const readme = renderReadme(entry, target.solutionFileName, timeZone, readmeTemplate, analysis);
 
   if (dryRun) {
     console.log(`[dry-run] ${entry.candidate.relativePath} -> ${path.relative(outputRoot, target.problemDir)}`);
@@ -89,6 +158,11 @@ for (const entry of latestByProblem) {
 }
 
 console.log(`Normalized ${latestByProblem.length} problem(s) into ${outputRoot}`);
+if (aiStats.cached || aiStats.generated || aiStats.fallback || aiStats.disabled) {
+  console.log(
+    `AI analysis: generated ${aiStats.generated}, cached ${aiStats.cached}, fallback ${aiStats.fallback}, disabled ${aiStats.disabled}`
+  );
+}
 
 function parseArgs(argv) {
   const parsed = {};
@@ -131,6 +205,18 @@ async function loadReadmeTemplate(filePath) {
   } catch (error) {
     if (error.code === 'ENOENT') {
       throw new Error(`README template not found: ${filePath}`);
+    }
+
+    throw error;
+  }
+}
+
+async function readOptionalTextFile(filePath) {
+  try {
+    return await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return '';
     }
 
     throw error;
@@ -427,7 +513,7 @@ function getTargetPaths(rootDir, entry) {
   };
 }
 
-function renderReadme(entry, solutionFileName, timeZone, template) {
+function renderReadme(entry, solutionFileName, timeZone, template, analysis) {
   const { metadata, submittedAt } = entry;
   const details = metadata.problemDetails ?? {};
   const difficultyLabel = metadata.difficulty === 'Unknown' ? 'LeetCode' : metadata.difficulty;
@@ -435,14 +521,9 @@ function renderReadme(entry, solutionFileName, timeZone, template) {
   const topicText = metadata.topics.length > 0 ? metadata.topics.join(', ') : '수집되지 않음';
   const submittedText = submittedAt ? formatKoreanDate(submittedAt, timeZone) : '수집되지 않음';
   const sample = details.examples?.[0] ?? null;
-  const constraints = details.constraints?.slice(0, 5) ?? [];
-  const coreIdeas = buildCoreIdeas(metadata);
-  const implementationFlow = buildImplementationFlow(metadata);
-  const cautions = buildCautions(metadata, constraints);
-  const formula = buildFormula(metadata, details);
   const summary = buildProblemSummary(metadata, details);
   const problemStatement = details.statement || summary;
-  const oneLine = buildOneLineSummary(metadata, details);
+  const readmeAnalysis = analysis ?? createFallbackAnalysis(entry);
   const problemInfoTable = [
     '| 항목 | 내용 |',
     '| --- | --- |',
@@ -459,19 +540,20 @@ function renderReadme(entry, solutionFileName, timeZone, template) {
   return renderTemplate(template, {
     TITLE: metadata.title,
     PROBLEM_INFO_TABLE: problemInfoTable,
+    AI_ANALYSIS_MARKER: readmeAnalysis.aiMarker ? `\n${readmeAnalysis.aiMarker}` : '',
     PROBLEM_STATEMENT: problemStatement,
     PROBLEM_SUMMARY: summary,
     INPUT_SECTION: renderInputSection(sample),
     OUTPUT_SECTION: renderOutputSection(sample),
-    CORE_IDEAS: renderBullets(coreIdeas),
-    FORMULA: formula,
-    IMPLEMENTATION_FLOW: renderNumberedList(implementationFlow),
-    CAUTIONS: renderBullets(cautions),
+    CORE_IDEAS: readmeAnalysis.coreIdeas,
+    FORMULA: readmeAnalysis.formula,
+    IMPLEMENTATION_FLOW: readmeAnalysis.implementationFlow,
+    CAUTIONS: readmeAnalysis.cautions,
     SOLUTION_FILE_NAME: solutionFileName,
     SOURCE_PATH: metadata.sourcePath,
-    TIME_COMPLEXITY: details.timeComplexity ?? '직접 분석 필요',
-    SPACE_COMPLEXITY: details.spaceComplexity ?? '직접 분석 필요',
-    ONE_LINE_SUMMARY: oneLine
+    TIME_COMPLEXITY: readmeAnalysis.timeComplexity,
+    SPACE_COMPLEXITY: readmeAnalysis.spaceComplexity,
+    ONE_LINE_SUMMARY: readmeAnalysis.oneLineSummary
   });
 }
 
@@ -485,6 +567,275 @@ function renderTemplate(template, values) {
   });
 
   return `${rendered.trimEnd()}\n`;
+}
+
+async function resolveReadmeAnalysis(entry, code, existingReadme, options, stats) {
+  const fallback = createFallbackAnalysis(entry);
+  const hash = createAiAnalysisHash(entry, code);
+  const cached = options.refresh ? null : extractCachedAiAnalysis(existingReadme, {
+    hash,
+    model: options.apiKey ? options.model : null
+  });
+
+  if (cached) {
+    stats.cached += 1;
+    return cached;
+  }
+
+  if (!options.enabled || !options.apiKey) {
+    stats[options.enabled ? 'fallback' : 'disabled'] += 1;
+    return fallback;
+  }
+
+  try {
+    const generated = await generateGeminiAnalysis(entry, code, options);
+    stats.generated += 1;
+    return {
+      ...generated,
+      aiMarker: createAiAnalysisMarker(options.model, hash)
+    };
+  } catch (error) {
+    stats.fallback += 1;
+    console.warn(`Gemini analysis fallback for ${entry.metadata.titleSlug}: ${error.message}`);
+    return fallback;
+  }
+}
+
+function createFallbackAnalysis(entry) {
+  const { metadata } = entry;
+  const details = metadata.problemDetails ?? {};
+  const constraints = details.constraints?.slice(0, 5) ?? [];
+
+  return {
+    coreIdeas: renderBullets(buildCoreIdeas(metadata)),
+    formula: buildFormula(metadata, details),
+    implementationFlow: renderNumberedList(buildImplementationFlow(metadata)),
+    cautions: renderBullets(buildCautions(metadata, constraints)),
+    timeComplexity: details.timeComplexity ?? '직접 분석 필요',
+    spaceComplexity: details.spaceComplexity ?? '직접 분석 필요',
+    oneLineSummary: buildOneLineSummary(metadata, details),
+    aiMarker: ''
+  };
+}
+
+function createAiAnalysisHash(entry, code) {
+  const { metadata } = entry;
+  const details = metadata.problemDetails ?? {};
+  const source = JSON.stringify({
+    version: AI_ANALYSIS_VERSION,
+    titleSlug: metadata.titleSlug,
+    difficulty: metadata.difficulty,
+    topics: metadata.topics,
+    language: metadata.language,
+    statement: details.statement || details.summary || '',
+    solution: code
+  });
+
+  return createHash('sha256').update(source).digest('hex').slice(0, 16);
+}
+
+function createAiAnalysisMarker(model, hash) {
+  return `<!-- AI_ANALYSIS: version=${AI_ANALYSIS_VERSION} model=${model} hash=${hash} -->`;
+}
+
+function extractCachedAiAnalysis(readme, expected) {
+  if (!readme) {
+    return null;
+  }
+
+  const marker = readme.match(/<!--\s*AI_ANALYSIS:\s*version=([^\s]+)\s+model=([^\s]+)\s+hash=([a-f0-9]+)\s*-->/);
+  if (!marker) {
+    return null;
+  }
+
+  const [, version, model, hash] = marker;
+  if (version !== AI_ANALYSIS_VERSION || hash !== expected.hash) {
+    return null;
+  }
+
+  if (expected.model && model !== expected.model) {
+    return null;
+  }
+
+  const complexity = extractMarkdownSection(readme, '⏱️ 복잡도 분석');
+  const cached = {
+    coreIdeas: extractMarkdownSection(readme, '💡 핵심 아이디어'),
+    formula: extractMarkdownSection(readme, '🧮 정답 계산식'),
+    implementationFlow: extractMarkdownSection(readme, '🔍 구현 흐름'),
+    cautions: extractMarkdownSection(readme, '⚠️ 주의할 점'),
+    timeComplexity: extractComplexityValue(complexity, '시간'),
+    spaceComplexity: extractComplexityValue(complexity, '공간'),
+    oneLineSummary: extractMarkdownSection(readme, '✅ 한 줄 요약'),
+    aiMarker: createAiAnalysisMarker(model, hash)
+  };
+
+  if (
+    !cached.coreIdeas ||
+    !cached.formula ||
+    !cached.implementationFlow ||
+    !cached.cautions ||
+    !cached.timeComplexity ||
+    !cached.spaceComplexity ||
+    !cached.oneLineSummary
+  ) {
+    return null;
+  }
+
+  return cached;
+}
+
+function extractMarkdownSection(readme, title) {
+  const heading = `## ${title}`;
+  const start = readme.indexOf(heading);
+  if (start < 0) {
+    return '';
+  }
+
+  const contentStart = start + heading.length;
+  const rest = readme.slice(contentStart);
+  const nextHeading = rest.search(/\n##\s+/);
+  const content = nextHeading >= 0 ? rest.slice(0, nextHeading) : rest;
+  return content.trim();
+}
+
+function extractComplexityValue(section, label) {
+  const match = section.match(new RegExp(`-\\s*${label}\\s*복잡도:\\s*(.+)`));
+  return match?.[1]?.trim() ?? '';
+}
+
+async function generateGeminiAnalysis(entry, code, options) {
+  const prompt = buildGeminiPrompt(entry, code);
+  const response = await fetch(`${GEMINI_GENERATE_CONTENT_URL}/${normalizeGeminiModel(options.model)}:generateContent`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': options.apiKey,
+      'User-Agent': 'algostudy-normalizer'
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: prompt }]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+        responseSchema: AI_ANALYSIS_SCHEMA
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Gemini API ${response.status}: ${truncateText(message, 240)}`);
+  }
+
+  const payload = await response.json();
+  const text = extractGeminiText(payload);
+  if (!text) {
+    throw new Error('Gemini API returned an empty response.');
+  }
+
+  return normalizeGeminiAnalysis(JSON.parse(text), createFallbackAnalysis(entry));
+}
+
+function normalizeGeminiModel(model) {
+  return encodeURIComponent(String(model).replace(/^models\//, ''));
+}
+
+function extractGeminiText(payload) {
+  return payload.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text ?? '')
+    .join('')
+    .trim() ?? '';
+}
+
+function buildGeminiPrompt(entry, code) {
+  const { metadata } = entry;
+  const details = metadata.problemDetails ?? {};
+  const examples = details.examples?.slice(0, 2)
+    .map((example, index) => {
+      const parts = [`Example ${index + 1}`];
+      if (example.input) {
+        parts.push(`Input: ${example.input}`);
+      }
+      if (example.output) {
+        parts.push(`Output: ${example.output}`);
+      }
+      if (example.explanation) {
+        parts.push(`Explanation: ${example.explanation}`);
+      }
+      return parts.join('\n');
+    })
+    .join('\n\n') || '수집된 예제가 없습니다.';
+
+  return [
+    '너는 알고리즘 풀이 README를 작성하는 한국어 기술 문서 작성자다.',
+    '아래 문제 설명과 제출 코드를 보고 README의 분석 섹션만 생성한다.',
+    '문제 설명을 그대로 다시 쓰지 말고, 풀이 코드가 실제로 사용하는 접근을 기준으로 작성한다.',
+    '모든 답변은 한국어로 작성한다.',
+    '목록 항목에는 번호나 불릿 기호를 직접 넣지 않는다.',
+    '시간/공간 복잡도는 확신할 수 있을 때 Big-O로 쓰고, 애매하면 "직접 분석 필요"로 둔다.',
+    '',
+    `제목: ${metadata.title}`,
+    `난이도: ${metadata.difficulty}`,
+    `태그: ${metadata.topics.join(', ') || '수집되지 않음'}`,
+    `언어: ${metadata.language}`,
+    '',
+    '문제 설명:',
+    truncateText(details.statement || details.summary || '', 8000),
+    '',
+    '예제:',
+    truncateText(examples, 3000),
+    '',
+    '제출 코드:',
+    `\`\`\`${metadata.language.toLowerCase()}`,
+    truncateText(code, 12000),
+    '```'
+  ].join('\n');
+}
+
+function normalizeGeminiAnalysis(raw, fallback) {
+  const coreIdeas = normalizeTextList(raw?.coreIdeas, 2, 5);
+  const implementationFlow = normalizeTextList(raw?.implementationFlow, 3, 6);
+  const cautions = normalizeTextList(raw?.cautions, 1, 5);
+
+  return {
+    coreIdeas: coreIdeas.length > 0 ? renderBullets(coreIdeas) : fallback.coreIdeas,
+    formula: cleanGeneratedText(raw?.formula) || fallback.formula,
+    implementationFlow: implementationFlow.length > 0 ? renderNumberedList(implementationFlow) : fallback.implementationFlow,
+    cautions: cautions.length > 0 ? renderBullets(cautions) : fallback.cautions,
+    timeComplexity: cleanGeneratedText(raw?.timeComplexity) || fallback.timeComplexity,
+    spaceComplexity: cleanGeneratedText(raw?.spaceComplexity) || fallback.spaceComplexity,
+    oneLineSummary: cleanGeneratedText(raw?.oneLineSummary) || fallback.oneLineSummary
+  };
+}
+
+function normalizeTextList(value, minItems, maxItems) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const items = value
+    .map(cleanGeneratedText)
+    .filter(Boolean)
+    .slice(0, maxItems);
+
+  return items.length >= minItems ? items : [];
+}
+
+function cleanGeneratedText(value) {
+  return String(value ?? '')
+    .replace(/\r/g, '')
+    .replace(/\n{2,}/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, '').trim())
+    .filter(Boolean)
+    .join(' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^#+\s*/, '')
+    .trim();
 }
 
 function parseProblemDetails(html) {

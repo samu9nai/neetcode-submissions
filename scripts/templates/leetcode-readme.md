@@ -2,7 +2,7 @@
 
 ## 📌 문제 정보
 
-{{PROBLEM_INFO_TABLE}}
+{{PROBLEM_INFO_TABLE}}{{AI_ANALYSIS_MARKER}}
 
 ## 📝 문제 설명
 
