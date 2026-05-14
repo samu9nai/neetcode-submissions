@@ -10,6 +10,22 @@ on:
       - "scripts/**"
       - ".github/workflows/sync-to-algostudy.yml"
   workflow_dispatch:
+    inputs:
+      test_mode:
+        description: "Generate LeetCode README files as an artifact without pushing to algostudy"
+        required: false
+        type: boolean
+        default: false
+      gemini_model:
+        description: "Gemini model used for README analysis"
+        required: false
+        type: string
+        default: "gemini-2.5-flash"
+      refresh_ai:
+        description: "Ignore cached AI analysis markers and regenerate analysis"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -17,7 +33,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-  GEMINI_MODEL: gemini-2.5-flash
+  GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-2.5-flash' }}
 
 concurrency:
   group: sync-to-algostudy
@@ -50,14 +66,30 @@ jobs:
           node-version: 24
 
       - name: Normalize submissions
-        run: >
-          node source/scripts/normalize-submissions.mjs
-          --source source
-          --output archive
-          --map source/scripts/problem-map.json
-          --template source/scripts/templates/leetcode-readme.md
+        run: |
+          args=(
+            --source source
+            --output archive
+            --map source/scripts/problem-map.json
+            --template source/scripts/templates/leetcode-readme.md
+          )
+
+          if [ "${{ inputs.refresh_ai || 'false' }}" = "true" ]; then
+            args+=(--refresh-ai)
+          fi
+
+          node source/scripts/normalize-submissions.mjs "${args[@]}"
+
+      - name: Upload test artifact
+        if: ${{ inputs.test_mode == true }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: leetcode-readme-test-${{ inputs.gemini_model || 'gemini-2.5-flash' }}
+          path: archive/LeetCode
+          if-no-files-found: error
 
       - name: Commit and push archive changes
+        if: ${{ inputs.test_mode != true }}
         run: |
           cd archive
 
