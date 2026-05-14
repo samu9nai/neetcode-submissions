@@ -106,7 +106,8 @@ const aiOptions = {
   apiKey: process.env.GEMINI_API_KEY?.trim() ?? '',
   enabled: !offline && !dryRun,
   model: args['gemini-model'] ?? process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL,
-  refresh: Boolean(args['refresh-ai'])
+  refresh: Boolean(args['refresh-ai']),
+  quotaLimited: false
 };
 const aiStats = {
   cached: 0,
@@ -587,6 +588,11 @@ async function resolveReadmeAnalysis(entry, code, existingReadme, options, stats
     return fallback;
   }
 
+  if (options.quotaLimited) {
+    stats.fallback += 1;
+    return fallback;
+  }
+
   try {
     const generated = await generateGeminiAnalysis(entry, code, options);
     stats.generated += 1;
@@ -596,6 +602,9 @@ async function resolveReadmeAnalysis(entry, code, existingReadme, options, stats
     };
   } catch (error) {
     stats.fallback += 1;
+    if (error.status === 429) {
+      options.quotaLimited = true;
+    }
     console.warn(`Gemini analysis fallback for ${entry.metadata.titleSlug}: ${error.message}`);
     return fallback;
   }
@@ -728,7 +737,9 @@ async function generateGeminiAnalysis(entry, code, options) {
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`Gemini API ${response.status}: ${truncateText(message, 240)}`);
+    const error = new Error(`Gemini API ${response.status}: ${truncateText(message, 240)}`);
+    error.status = response.status;
+    throw error;
   }
 
   const payload = await response.json();
