@@ -20,7 +20,7 @@ on:
         description: "Gemini model used for README analysis"
         required: false
         type: string
-        default: "gemini-2.5-flash"
+        default: "gemini-3.1-flash-lite"
       refresh_ai:
         description: "Ignore cached AI analysis markers and regenerate analysis"
         required: false
@@ -33,7 +33,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-  GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-2.5-flash' }}
+  GEMINI_MODEL: ${{ inputs.gemini_model || 'gemini-3.1-flash-lite' }}
 
 concurrency:
   group: sync-to-algostudy
@@ -84,7 +84,7 @@ jobs:
         if: ${{ inputs.test_mode == true }}
         uses: actions/upload-artifact@v6
         with:
-          name: leetcode-readme-test-${{ inputs.gemini_model || 'gemini-2.5-flash' }}
+          name: leetcode-readme-test-${{ inputs.gemini_model || 'gemini-3.1-flash-lite' }}
           path: archive/LeetCode
           if-no-files-found: error
 

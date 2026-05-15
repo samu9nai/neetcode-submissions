@@ -21,7 +21,7 @@ const LANGUAGE_BY_EXTENSION = {
 };
 
 const DEFAULT_TIME_ZONE = 'Asia/Seoul';
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.1-flash-lite';
 const LEETCODE_GRAPHQL_URL = 'https://leetcode.com/graphql';
 const NEETCODE_PROBLEM_URL = 'https://neetcode.io/problems';
 const GEMINI_GENERATE_CONTENT_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
