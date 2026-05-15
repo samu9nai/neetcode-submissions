@@ -13,6 +13,13 @@
     "difficulty": "Easy",
     "topics": ["Array", "Hash Table", "Sorting"]
   },
+  "is-anagram": {
+    "leetcodeSlug": "valid-anagram",
+    "id": "242",
+    "title": "Valid Anagram",
+    "difficulty": "Easy",
+    "topics": ["Hash Table", "String", "Sorting"]
+  },
   "anagram-groups": {
     "leetcodeSlug": "group-anagrams",
     "id": "49",

@@ -144,6 +144,9 @@ if (!dryRun) {
 for (const entry of latestByProblem) {
   const target = getTargetPaths(outputRoot, entry);
   const code = await fs.readFile(entry.candidate.absolutePath, 'utf8');
+  if (!dryRun) {
+    await removeStaleProblemDirs(outputRoot, entry.metadata.sourcePath, target.problemDir);
+  }
   const existingReadme = await readOptionalTextFile(path.join(target.problemDir, 'README.md'));
   const analysis = await resolveReadmeAnalysis(entry, code, existingReadme, aiOptions, aiStats);
   const readme = renderReadme(entry, target.solutionFileName, timeZone, readmeTemplate, analysis);
@@ -257,6 +260,36 @@ async function removeGeneratedMetaFiles(rootDir) {
         .filter((file) => path.basename(file) === 'meta.json')
         .map((file) => fs.unlink(file))
     );
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+}
+
+async function removeStaleProblemDirs(rootDir, sourcePath, targetProblemDir) {
+  const leetcodeRoot = path.join(rootDir, 'LeetCode');
+  const targetDir = path.resolve(targetProblemDir);
+  const sourcePathPattern = new RegExp(`\\|\\s*원본 경로\\s*\\|\\s*\`${escapeRegExp(sourcePath)}\`\\s*\\|`);
+
+  try {
+    const readmes = (await collectFiles(leetcodeRoot))
+      .filter((file) => path.basename(file) === 'README.md');
+
+    for (const readmePath of readmes) {
+      const problemDir = path.resolve(path.dirname(readmePath));
+      if (problemDir === targetDir) {
+        continue;
+      }
+
+      const readme = await fs.readFile(readmePath, 'utf8');
+      if (!sourcePathPattern.test(readme)) {
+        continue;
+      }
+
+      await fs.rm(problemDir, { recursive: true, force: true });
+      console.log(`Removed stale LeetCode archive: ${path.relative(rootDir, problemDir)}`);
+    }
   } catch (error) {
     if (error.code !== 'ENOENT') {
       throw error;
