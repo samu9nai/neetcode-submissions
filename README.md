@@ -51,6 +51,18 @@ This repository also feeds [`samu9nai/algostudy`](https://github.com/samu9nai/al
 - Generated analysis is cached with an invisible README marker and reused until the problem statement or solution code changes.
 - If Gemini is unavailable, the script falls back to deterministic local analysis so the sync still succeeds.
 
+### Adding a slug mapping
+
+When NeetCode and LeetCode use different slugs for the same problem, add a mapping with both URLs:
+
+```bash
+node scripts/add-problem-map.mjs \
+  --neetcode-url https://neetcode.io/problems/search-for-word/question \
+  --leetcode-url https://leetcode.com/problems/word-search/description/
+```
+
+The helper updates `scripts/problem-map.json` and fills LeetCode metadata when the API is reachable.
+
 ---
 
 ## Supported languages

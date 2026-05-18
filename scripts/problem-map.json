@@ -82,5 +82,12 @@
     "title": "Keys and Rooms",
     "difficulty": "Medium",
     "topics": ["Depth-First Search", "Breadth-First Search", "Graph"]
+  },
+  "search-for-word": {
+    "leetcodeSlug": "word-search",
+    "id": "79",
+    "title": "Word Search",
+    "difficulty": "Medium",
+    "topics": ["Array", "String", "Backtracking", "Depth-First Search", "Matrix"]
   }
 }
