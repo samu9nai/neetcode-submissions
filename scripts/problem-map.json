@@ -89,5 +89,12 @@
     "title": "Word Search",
     "difficulty": "Medium",
     "topics": ["Array", "String", "Backtracking", "Depth-First Search", "Matrix"]
+  },
+  "depth-of-binary-tree": {
+    "leetcodeSlug": "maximum-depth-of-binary-tree",
+    "id": "104",
+    "title": "Maximum Depth of Binary Tree",
+    "difficulty": "Easy",
+    "topics": ["Tree", "Depth-First Search", "Breadth-First Search", "Binary Tree"]
   }
 }
