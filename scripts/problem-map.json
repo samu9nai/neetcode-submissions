@@ -103,5 +103,12 @@
     "title": "Valid Palindrome",
     "difficulty": "Easy",
     "topics": ["Two Pointers", "String"]
+  },
+  "buy-and-sell-crypto": {
+    "leetcodeSlug": "best-time-to-buy-and-sell-stock",
+    "id": "121",
+    "title": "Best Time to Buy and Sell Stock",
+    "difficulty": "Easy",
+    "topics": ["Array", "Dynamic Programming"]
   }
 }
