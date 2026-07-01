@@ -110,5 +110,12 @@
     "title": "Best Time to Buy and Sell Stock",
     "difficulty": "Easy",
     "topics": ["Array", "Dynamic Programming"]
+  },
+  "reverse-a-linked-list": {
+    "leetcodeSlug": "reverse-linked-list",
+    "id": "206",
+    "title": "Reverse Linked List",
+    "difficulty": "Easy",
+    "topics": ["Linked List", "Recursion"]
   }
 }
